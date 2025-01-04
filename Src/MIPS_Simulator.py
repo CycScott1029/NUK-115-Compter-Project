@@ -6,7 +6,7 @@ class MIPS_Simulator:
         self.instruction_memory = self.load_instruction(file_path)
         self.register_file = {f'${i}': 0 for i in range(32)}
         self.data_memory = {}
-        self.instuction_in_stages = {
+        self.instruction_in_stages = {
             "IF": None,
             "ID": None,
             "EX": None,
