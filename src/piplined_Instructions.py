@@ -16,6 +16,9 @@ class MIPS_Pipeline:
         # Instruction memory
         self.instructions = []
 
+        #flags
+        self.beq = 0
+
     def load_instructions(self, instructions):
         self.instructions = instructions
 
@@ -27,10 +30,9 @@ class MIPS_Pipeline:
         if self.pc < len(self.instructions):
             instruction = self.instructions[self.pc]
             self.pipeline_registers["IF/ID"] = {"instruction": instruction}
+            print(f"pc:{self.pc}, {instruction}")
             self.pc += 1
-            self.print_state()
             
-
     def ID(self):
         """
         Decode R-format, I-format, and Branch instructions
@@ -74,11 +76,23 @@ class MIPS_Pipeline:
                 control_signals["Branch"] = 1
                 control_signals["ALUOp"] = "01"
 
+            # beq 
+            if control_signals["Branch"] == 1:
+                rs, rt, offset = map(str, args[0:3])
+                rs= int(rs.strip(','))
+                rt = int(rt.strip(','))
+                offset = int(offset)
+                if self.registers[rs] == self.registers[rt]:
+                    self.pc += offset
+                self.beq = 1
+                return
+
             self.pipeline_registers["ID/EX"] = {
                 "op": op,
                 "args": args,
                 "control_signals": control_signals,
             }
+
 
     def EX(self):
         """
@@ -88,7 +102,7 @@ class MIPS_Pipeline:
             op = self.pipeline_registers["ID/EX"]["op"]
             args = self.pipeline_registers["ID/EX"]["args"]
             control_signals = self.pipeline_registers["ID/EX"]["control_signals"]
-
+            
             # ALUSrc = 0 Using registers(R-f)；ALUSrc = 1 Using immediate value(I-f)
             # R-f only have 'add' and 'sub', ALUop = "10",sent 'rd' and value to the next stage
             if control_signals["ALUSrc"] == 0:
@@ -97,30 +111,19 @@ class MIPS_Pipeline:
                 rs = int(rs.strip(','))
                 rt = int(rt.strip(','))
                 if control_signals["ALUOp"] == "10":
-                    result = {"rd":rd, "value":self.registers[rs] + self.registers[rt]}
+                    if op == "add":
+                        result = {"rd":rd, "value":self.registers[rs] + self.registers[rt]}
+                    elif op == "sub":
+                        result = {"rd":rd, "value":self.registers[rs] - self.registers[rt]}
             
             # I-f have 'lw' and 'sw', setting mem address to the next stage 
             else: 
                 rt, offset_rs = args
                 rt = int(rt.strip(','))
                 offset, rs = offset_rs.strip(')').split('(')
-                offset = int(offset)
                 rs = int(rs)
-                result = {"rt":rt, "address":self.registers[rs] + offset}
-
-            # beq 
-            if control_signals["Branch"] == 1:
-                rs, rt, offset = map(str, args[0:3])
-                rs= int(rs.strip(','))
-                rt = int(rt.strip(','))
                 offset = int(offset)
-
-                if self.registers[rs] == self.registers[rt]:
-                    self.pc += offset
-                    self.pipeline_registers["EX/MEM"] = {                
-                        "op": op,
-                        "control_signals": control_signals,}
-                    return
+                result = {"rt":rt, "offset":self.registers[rs] + offset}
 
             # Pass results to the next stage
             self.pipeline_registers["EX/MEM"] = {
@@ -135,16 +138,11 @@ class MIPS_Pipeline:
         """
         if "op" in self.pipeline_registers["EX/MEM"]:
             op = self.pipeline_registers["EX/MEM"]["op"]
-            control_signals = self.pipeline_registers["EX/MEM"]["control_signals"]
-            # beq skip
-            if control_signals["Branch"] == 1: 
-                return
-            
             result = self.pipeline_registers["EX/MEM"]["result"]
-           
+            control_signals = self.pipeline_registers["ID/EX"]["control_signals"]
             # Lw
             if control_signals["MemRead"]:  
-                value = self.memory[result["address"]]
+                value = self.memory[result["offset"]]
                 rt = result["rt"]
                 result = {"rt":rt,"value":value}
                 self.pipeline_registers["MEM/WB"] = {
@@ -156,8 +154,8 @@ class MIPS_Pipeline:
             # Sw
             elif control_signals["MemWrite"]:  
                 rt = result["rt"]
-                address = result["address"]
-                self.memory[address] = self.registers[rt]
+                offset = result["offset"]
+                self.memory[offset] = self.registers[rt]
 
              # 'add' and 'sub'
             elif control_signals["RegWrite"]: 
@@ -169,15 +167,16 @@ class MIPS_Pipeline:
         Write back stage
         """
         if "op" in self.pipeline_registers["MEM/WB"]:
-            control_signals = self.pipeline_registers["MEM/WB"]["control_signals"]
+            control_signals = self.pipeline_registers["ID/EX"]["control_signals"]
 
             if control_signals["RegWrite"]:
                 # lw
                 if control_signals["MemtoReg"]:
                     rt = int(self.pipeline_registers["MEM/WB"]["result"]["rt"])
                     value = self.pipeline_registers["MEM/WB"]["result"]["value"] 
+                    print(f"lw:{self.registers[rt]}]={value}")
                     self.registers[rt] = value
-                
+                    
                 # 'add' and 'sub'
                 else:
                     rd = (self.pipeline_registers["MEM/WB"]["result"]["rd"])
@@ -191,6 +190,11 @@ class MIPS_Pipeline:
         """
         self.IF()
         self.ID()
+        
+        if self.beq == 1:
+            self.beq = 0
+            return
+        
         self.EX()
         self.MEM()
         self.WB()
@@ -201,25 +205,24 @@ class MIPS_Pipeline:
         """
         while self.pc < len(self.instructions):
             self.step()
+            self.print_state()
 
     def print_state(self):
         """
         Print the current state of the pipeline
         """
-        print(f"PC:{self.pc}, {self.instructions[self.pc-1]}")
         print("Registers:", self.registers)
         print("Memory:", self.memory)
 
 # Example usage:
 instructions = [
     "add 1, 2, 3",  # $1 = $2 + $3
-    "sub 4, 1, 2",  # $4 = $1 - $2
-    "beq 2, 3, 1",
-    "lw 5, 0(1)",   # $5 = Memory[$1 + 0]
-    "sw 5, 4(2)",   # Memory[$2 + 4] = $5
+    "add 2, 2, 1",  # $4 = $1 - $2
+    "beq 0, 6, 1",
+    "lw 1, 5(1)",   # $1 = Memory[$1 + 0]
+    "sw 1, 4(2)",   # Memory[$2 + 4] = $5
 ]
 
 mips = MIPS_Pipeline()
-print(instructions)
 mips.load_instructions(instructions)
 mips.run()
