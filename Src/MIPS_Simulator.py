@@ -4,6 +4,12 @@ from Pipeline_Inspector import PipelineInspector
 class MIPS_Simulator:
     def __init__(self, file_path):
         self.instruction_memory = self.load_instruction(file_path)
+        '''
+        The instruction format:
+        {
+
+        }
+        '''
         self.register_file = {f'${i}': 0 for i in range(32)}
         self.data_memory = {}
         self.instruction_in_stages = {
@@ -31,6 +37,7 @@ class MIPS_Simulator:
         self.inspector = PipelineInspector()
         self.program_counter = 0
         self.cycles = 0
+        self.end = False
 
     def load_instruction(file_path):
         parsed_inst = []
@@ -56,10 +63,31 @@ class MIPS_Simulator:
     def WB(self):
         pass
 
-    def run(self):
+    def data_tracker(self):
         pass
+
+    def handle_hazard(self, harzards):
+        stageMEMA, stageMEMB, hazard_type = harzards
+        
+        if hazard_type == "Data Hazard":
+            if self.pipeline_registers[stageMEMA]["rs"]["register"] == self.pipeline_registers[stageMEMB]["rd"]["register"]:
+                # pause for now
+                pass
+
+                
+        
+
+    def run(self):
+        hazards = self.inspector.detect_hazard(self.pipeline_registers)
+        self.handle_hazard(hazards)
+        
+
+        self.data_tracker()
+        return self.end
+        
 
 
 if __name__ == "__main__":
     Sim = MIPS_Simulator(file_path="./inputs/test3.txt")
-    Sim.run()
+    while not Sim.run():
+        pass
