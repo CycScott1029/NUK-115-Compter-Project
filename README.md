@@ -3,7 +3,7 @@
 
 ## 必須安裝的軟體與工具
 ### Runtime
-   ...
+   Python 3.12.4
 
 ### Package Manager
    ...
