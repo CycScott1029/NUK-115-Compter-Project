@@ -1,3 +1,5 @@
+import Pipeline_Inspector 
+
 class MIPS_Pipeline:
     def __init__(self):
         # 32 registers and 32 word memory
@@ -28,8 +30,7 @@ class MIPS_Pipeline:
         self.instructions = []
 
         #flags
-        self.beq = 0
-        stall = 0
+        self.stall = False
 
     def load_instructions(self, instructions):
         self.instructions = instructions
@@ -95,15 +96,21 @@ class MIPS_Pipeline:
                 control_signals["Branch"] = 1
                 control_signals["ALUOp"] = "01"
 
-            # beq defalut is NT;
+            # beq
             if control_signals["Branch"] == 1:
                 rs, rt, offset = map(str, args[0:3])
                 rs= int(rs.strip(','))
                 rt = int(rt.strip(','))
+                
+                # detect_hazard
+                if self.detect_hazard(self,self.pipeline_registers["IF/ID"]):
+                    self.stall = True
+                    return
                 offset = int(offset)
                 if self.registers[rs] == self.registers[rt]:
+                    # 重取 pc 進入 IF stage
                     self.pc += offset
-                self.beq = 1
+
                 return
             
             # ALUSrc = 0 Using registers(R-f)；ALUSrc = 1 Using immediate value(I-f)
@@ -238,6 +245,19 @@ class MIPS_Pipeline:
                     result = self.pipeline_registers["MEM/WB"]["result"]["value"]
                     self.registers[rd] = result
 
+    def detect_hazard(self, pipeline_register):
+        """
+        判斷是否會發生 data_hazard
+        return true or false
+        """
+        # RAW (Read After Write)
+        if pipeline_register["ID/EX"] and pipeline_register["EX/MEM"]:
+            id_ex = pipeline_register["ID/EX"]
+            ex_mem = pipeline_register["EX/MEM"]
+
+            if id_ex["op"] == "beq" and ex_mem["op"] == "lw":
+                pass
+
 
     def step(self):
         """
@@ -245,25 +265,28 @@ class MIPS_Pipeline:
         """
         self.cycle += 1
 
-        if self.pipeline_instructions["MEM"] is not None:
+        if (self.pipeline_instructions["MEM"] is not None) and self.stall != True:
             self.WB()
             self.pipeline_instructions["MEM"] = None
             self.pc += 1 
 
-        if self.pipeline_instructions["EX"] is not None:
+        if (self.pipeline_instructions["EX"] is not None) and self.stall != True:
             self.MEM()
             self.pipeline_instructions["EX"] = None
 
-        if self.pipeline_instructions["ID"] is not None:
+        if (self.pipeline_instructions["ID"] is not None) and self.stall != True:
             self.EX()
             self.pipeline_instructions["ID"] = None
 
-        if self.pipeline_instructions["IF"] is not None:
+        if (self.pipeline_instructions["IF"] is not None) and self.stall != True:
             self.ID()
             self.pipeline_instructions["IF"] = None
 
-        if self.pipeline_instructions["IF"] is None:
+        if (self.pipeline_instructions["IF"] is None) and self.stall != True:
             self.IF()
+
+        # 解除 stall
+        self.stall = False
 
         print(f"cycle:{self.cycle}:{self.pipeline_instructions}")
         self.pipeline_instructions["WB"] = None
@@ -279,13 +302,6 @@ class MIPS_Pipeline:
             self.step()
         self.output_result()
             
-    def print_state(self):
-        """
-        Print the current state of the pipeline
-        """
-        print("Registers:", self.registers)
-        print("Memory:", self.memory)
-
     def output_result(self):
         print(f"需要花 {self.cycle} 個 cycles")
         print(" ".join(f"${i}" for i in range(32)))
@@ -297,7 +313,7 @@ class MIPS_Pipeline:
 instructions = [
     "lw 2, 8(0)",  
     "lw 3, 16(0)",  
-    # "beq 2, 3, 1",
+    # "beq 2, 3, 1", # 因為 rs, rt 使用到前面將更新的值會發生data_Hatard 所以要stall，等前面WB
     "add 4, 2, 3",   
     "sw 4, 24(0)",   
 ]
