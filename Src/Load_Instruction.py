@@ -1,3 +1,5 @@
+from MIPS_instruction import MIPS_Instruction
+
 def read_instructions(file_path):
     instructions = []
     with open(file_path, 'r') as file:
@@ -10,63 +12,41 @@ def read_instructions(file_path):
     return instructions
 
 def parse_instruction(instruction):
-    def parse_operand(operand):
-        """Parses individual operands."""
-        if '(' in operand and ')' in operand:  # Memory access with offset
-            offset, register = operand.split('(')
-            register = register.strip(')')
-            return {"type": "memory", "register": register, "offset": int(offset)}
-        elif operand.startswith('$'):  # Register operand
-            return {"type": "register", "register": operand, "offset": None}
-        else:  # Immediate value
-            return {"type": "immediate", "register": None, "offset": int(operand)}
-
-    # Split instruction and extract components
+    # Remove commas and split the instruction into parts
     parts = instruction.replace(',', '').split()
-    operation = parts[0]
-    raw_operands = parts[1:]
-    
-    parsed_operands = [parse_operand(op) for op in raw_operands]
+    operation = parts[0]  # The operation (e.g., 'add', 'lw', etc.)
+    operands = parts[1:]  # The operands (e.g., ['$1', '$2', '$3'])
 
-    # Infer rs, rt, rd based on operation type
-    if operation in ["add", "sub"]:
-        rd = parsed_operands[0]["register"]
-        rs = parsed_operands[1]["register"]
-        rt = parsed_operands[2]["register"]
-        return {
-            "operation": operation,
-            "rs": rs,
-            "rsValue": None,
-            "rt": rt,
-            "rtValue": None,
-            "rd": rd,
-            "rdValue": None,
-            "offset": None
-        }
-    elif operation in ["lw", "sw"]:
-        rt = parsed_operands[0]["register"]
-        rs = parsed_operands[1]["register"]
-        offset = parsed_operands[1]["offset"]
-        return {
-            "operation": operation,
-            "rs": rs,
-            "rsValue": None,
-            "rt": rt,
-            "rtValue": None,
-            "rd": None,
-            "rdValue": None,
-            "offset": offset
-        }
-    elif operation in ["beq"]:
-        rs = parsed_operands[0]["register"]
-        rt = parsed_operands[1]["register"]
-        offset = parsed_operands[2]["offset"]
-        return {
-            "operation": operation,
-            "rs": rs,
-            "rt": rt,
-            "rd": None,
-            "offset": offset
-        }
+    # Map registers and immediate values
+    rs = None
+    rt = None
+    rd = None
+    immediate = None
 
+    if operation in ['add', 'sub']:  # R-type instructions
+        rd, rs, rt = operands
+        rd = rd.replace('$', '')
+        rs = rs.replace('$', '')
+        rt = rt.replace('$', '')
+    elif operation in ['lw', 'sw']:  # I-type instructions
+        rt, offset_base = operands
+        rt = rt.replace('$', '')
+        offset, rs = offset_base.split('(')
+        rs = rs.replace(')', '').replace('$', '')
+        immediate = int(offset)
+    elif operation in ['beq']:  # Branch instruction
+        rs, rt, immediate = operands
+        rs = rs.replace('$', '')
+        rt = rt.replace('$', '')
+        immediate = int(immediate)
+    elif operation in ['j']:  # J-type instruction
+        immediate = int(operands[0])
 
+    # Create a MIPS_Instruction object
+    return MIPS_Instruction({
+        "operation": operation,
+        "rs": rs,
+        "rt": rt,
+        "rd": rd,
+        "immediate": immediate
+    })
