@@ -22,11 +22,14 @@ class MIPS_Pipeline:
         }
         # Program counter
         self.pc = 0
+        self.pcount = 0
+        self.cycle = 0
         # Instruction memory
         self.instructions = []
 
         #flags
         self.beq = 0
+        stall = 0
 
     def load_instructions(self, instructions):
         self.instructions = instructions
@@ -36,11 +39,15 @@ class MIPS_Pipeline:
         Fetch the instruction from instruction memory
         Update the next address of instruction
         """
-        if self.pc < len(self.instructions):
-            instruction = self.instructions[self.pc]
+        if self.pcount < len(self.instructions):
+            # Fetch the instruction
+            instruction = self.instructions[self.pcount]
+            # add op to IF
+            op, *args = instruction.split()
+            self.pipeline_instructions["IF"] = f"{op}"
+
+            # instruction to next stage
             self.pipeline_registers["IF/ID"] = {"instruction": instruction}
-            print(f"pc:{self.pc}, {instruction}")
-            self.pc += 1
             
     def ID(self):
         """
@@ -50,6 +57,9 @@ class MIPS_Pipeline:
         if "instruction" in self.pipeline_registers["IF/ID"]:
             instruction = self.pipeline_registers["IF/ID"]["instruction"]
             op, *args = instruction.split()
+
+            # add to ID
+            self.pipeline_instructions["ID"] = f"{op}"
 
             # Initialize default control signals
             control_signals = {
@@ -85,7 +95,7 @@ class MIPS_Pipeline:
                 control_signals["Branch"] = 1
                 control_signals["ALUOp"] = "01"
 
-            # beq 
+            # beq defalut is NT;
             if control_signals["Branch"] == 1:
                 rs, rt, offset = map(str, args[0:3])
                 rs= int(rs.strip(','))
@@ -124,11 +134,17 @@ class MIPS_Pipeline:
         """
         Execute the instruction
         """
+        # debug show
+        # print(self.pipeline_registers["ID/EX"])
+
         if "op" in self.pipeline_registers["ID/EX"]:
             op = self.pipeline_registers["ID/EX"]["op"]
             result = self.pipeline_registers["ID/EX"]["result"]
             control_signals = self.pipeline_registers["ID/EX"]["control_signals"]
             
+            # add to EX
+            self.pipeline_instructions["EX"] = f"{op}"
+
             # R-f only have 'add' and 'sub', ALUop = "10",sent 'rd' and value to the next stage
             if control_signals["ALUOp"] == "10":
                 rd =  result["rd"]
@@ -157,11 +173,19 @@ class MIPS_Pipeline:
         """
         Memory access stage
         """
+        # debug show
+        # print(f"stage:MEM:{self.pipeline_registers['EX/MEM']}")
+
         if "op" in self.pipeline_registers["EX/MEM"]:
             op = self.pipeline_registers["EX/MEM"]["op"]
             result = self.pipeline_registers["EX/MEM"]["result"]
-            control_signals = self.pipeline_registers["ID/EX"]["control_signals"]
+            control_signals = self.pipeline_registers["EX/MEM"]["control_signals"]
+
+            # add to MEM
+            self.pipeline_instructions["MEM"] = f"{op}"
+            
             # Lw
+            # print(f"MEMRead:{control_signals['MemRead']}") # 幹 control_signals 設錯
             if control_signals["MemRead"]:  
                 value = self.memory[result["offset"]]
                 rt = result["rt"]
@@ -177,25 +201,35 @@ class MIPS_Pipeline:
                 rt = result["rt"]
                 offset = result["offset"]
                 self.memory[offset] = self.registers[rt]
+                # 確保完整性，後面要問 op
+                self.pipeline_registers["MEM/WB"] = {
+                    "op": op,
+                    "control_signals": control_signals,
+                }
 
              # 'add' and 'sub'
             elif control_signals["RegWrite"]: 
                 self.pipeline_registers["MEM/WB"] = self.pipeline_registers["EX/MEM"]
 
-
     def WB(self):
         """
         Write back stage
         """
+        # debug show
+        # print(f"stage:WB:{self.pipeline_registers['MEM/WB']}")
+
         if "op" in self.pipeline_registers["MEM/WB"]:
-            control_signals = self.pipeline_registers["ID/EX"]["control_signals"]
+            op = self.pipeline_registers["MEM/WB"]["op"]
+            control_signals = self.pipeline_registers["MEM/WB"]["control_signals"]
+        
+            # add to WB
+            self.pipeline_instructions["WB"] = f"{op}"
 
             if control_signals["RegWrite"]:
                 # lw
                 if control_signals["MemtoReg"]:
                     rt = int(self.pipeline_registers["MEM/WB"]["result"]["rt"])
                     value = self.pipeline_registers["MEM/WB"]["result"]["value"] 
-                    print(f"lw:{self.registers[rt]}]={value}")
                     self.registers[rt] = value
                     
                 # 'add' and 'sub'
@@ -207,18 +241,35 @@ class MIPS_Pipeline:
 
     def step(self):
         """
-        
+        calculate cycle and ex pipline
         """
-        self.IF()
-        self.ID()
-        
-        if self.beq == 1:
-            self.beq = 0
-            return
-        
-        self.EX()
-        self.MEM()
-        self.WB()
+        self.cycle += 1
+
+        if self.pipeline_instructions["MEM"] is not None:
+            self.WB()
+            self.pipeline_instructions["MEM"] = None
+            self.pc += 1 
+
+        if self.pipeline_instructions["EX"] is not None:
+            self.MEM()
+            self.pipeline_instructions["EX"] = None
+
+        if self.pipeline_instructions["ID"] is not None:
+            self.EX()
+            self.pipeline_instructions["ID"] = None
+
+        if self.pipeline_instructions["IF"] is not None:
+            self.ID()
+            self.pipeline_instructions["IF"] = None
+
+        if self.pipeline_instructions["IF"] is None:
+            self.IF()
+
+        print(f"cycle:{self.cycle}:{self.pipeline_instructions}")
+        self.pipeline_instructions["WB"] = None
+
+        if self.pcount < len(self.instructions):
+            self.pcount += 1
         
     def run(self):
         """
@@ -226,15 +277,15 @@ class MIPS_Pipeline:
         """
         while self.pc < len(self.instructions):
             self.step()
-            self.print_state()
-
+        self.output_result()
+            
     def print_state(self):
         """
         Print the current state of the pipeline
         """
         print("Registers:", self.registers)
         print("Memory:", self.memory)
-        
+
     def output_result(self):
         print(f"需要花 {self.cycle} 個 cycles")
         print(" ".join(f"${i}" for i in range(32)))
@@ -244,17 +295,12 @@ class MIPS_Pipeline:
 
 # Example usage:
 instructions = [
-    "lw 2, 8(0)",  # $1 = $2 + $3
-    "lw 3, 16(0)",  # $4 = $1 - $2
-    "beq 2, 3, 1",
-    "add 4, 2, 3",   # $1 = Memory[$1 + 0]
-    "sw 4, 24(0)",   # Memory[$2 + 4] = $5
+    "lw 2, 8(0)",  
+    "lw 3, 16(0)",  
+    # "beq 2, 3, 1",
+    "add 4, 2, 3",   
+    "sw 4, 24(0)",   
 ]
-# lw $2, 8($0)
-# lw $3, 16($0) 
-# beq $2, $3, 1
-# add $4, $2, $3
-# sw $4, 24($0)
 
 mips = MIPS_Pipeline()
 mips.load_instructions(instructions)

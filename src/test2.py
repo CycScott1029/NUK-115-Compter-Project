@@ -1,3 +1,6 @@
+"""
+GPT 生成
+"""
 class MIPS_Pipeline:
     def __init__(self):
         # 32 registers and 32 word memory
@@ -121,30 +124,46 @@ class MIPS_Pipeline:
 
 
     def EX(self):
-        """
-        Execute the instruction
-        """
         if "op" in self.pipeline_registers["ID/EX"]:
             op = self.pipeline_registers["ID/EX"]["op"]
             result = self.pipeline_registers["ID/EX"]["result"]
             control_signals = self.pipeline_registers["ID/EX"]["control_signals"]
-            
-            # R-f only have 'add' and 'sub', ALUop = "10",sent 'rd' and value to the next stage
+
+            rs = result["rs"]
+            rt = result["rt"]
+
+            # Forwarding logic
+            forward_rs = self.registers[rs]
+            forward_rt = self.registers[rt]
+
+            # Check EX/MEM forwarding
+            if "result" in self.pipeline_registers["EX/MEM"]:
+                if self.pipeline_registers["EX/MEM"]["result"]["rd"] == rs:
+                    forward_rs = self.pipeline_registers["EX/MEM"]["result"]["value"]
+                if self.pipeline_registers["EX/MEM"]["result"]["rd"] == rt:
+                    forward_rt = self.pipeline_registers["EX/MEM"]["result"]["value"]
+
+            # Check MEM/WB forwarding
+            if "result" in self.pipeline_registers["MEM/WB"]:
+                if self.pipeline_registers["MEM/WB"]["result"]["rd"] == rs:
+                    forward_rs = self.pipeline_registers["MEM/WB"]["result"]["value"]
+                if self.pipeline_registers["MEM/WB"]["result"]["rd"] == rt:
+                    forward_rt = self.pipeline_registers["MEM/WB"]["result"]["value"]
+
+            # R-f instructions ('add', 'sub')
             if control_signals["ALUOp"] == "10":
-                rd =  result["rd"]
-                rt =  result["rt"]
-                rs =  result["rs"]
+                rd = result["rd"]
                 if op == "add":
-                    result = {"rd":rd, "value":self.registers[rs] + self.registers[rt]}
+                    result = {"rd": rd, "value": forward_rs + forward_rt}
                 elif op == "sub":
-                    result = {"rd":rd, "value":self.registers[rs] - self.registers[rt]}
-            
-            # I-f have 'lw' and 'sw', setting mem address to the next stage 
-            else: 
+                    result = {"rd": rd, "value": forward_rs - forward_rt}
+
+            # I-f instructions ('lw', 'sw')
+            else:
                 rt = result["rt"]
                 offset = result["offset"]
                 rs = result["rs"]
-                result = {"rt":rt, "offset":self.registers[rs] + offset}
+                result = {"rt": rt, "offset": forward_rs + offset}
 
             # Pass results to the next stage
             self.pipeline_registers["EX/MEM"] = {
@@ -152,6 +171,7 @@ class MIPS_Pipeline:
                 "result": result,
                 "control_signals": control_signals,
             }
+
 
     def MEM(self):
         """
@@ -234,13 +254,6 @@ class MIPS_Pipeline:
         """
         print("Registers:", self.registers)
         print("Memory:", self.memory)
-        
-    def output_result(self):
-        print(f"需要花 {self.cycle} 個 cycles")
-        print(" ".join(f"${i}" for i in range(32)))
-        print(" ".join(f" {reg} " for reg in self.registers))
-        print(" ".join(f"W{i}" for i in range(32)))
-        print(" ".join(f" {mem} " for mem in self.memory))
 
 # Example usage:
 instructions = [

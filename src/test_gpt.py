@@ -1,5 +1,6 @@
 """
-學長的code 改 python，沒驗證對不對
+GPT 生成
+學長的code 改 python，沒驗證對不對 
 """
 class MIPS_Pipeline:
     def __init__(self):
@@ -144,9 +145,10 @@ if __name__ == "__main__":
     instructions = [
         "add 1, 2, 3",  # $1 = $2 + $3
         "sub 4, 1, 2",  # $4 = $1 - $2
+        "beq 1, 2, 8"   # If $1 == $2, jump to instruction at index 8
         "lw 5, 0(1)",   # $5 = Memory[$1 + 0]
         "sw 5, 4(2)",   # Memory[$2 + 4] = $5
-        "beq 1, 2, 8"   # If $1 == $2, jump to instruction at index 8
+        
     ]
 
     mips = MIPS_Pipeline()
