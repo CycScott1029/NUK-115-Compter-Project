@@ -1,3 +1,5 @@
+import os
+
 # const value
 maxcount = 20
 
@@ -197,39 +199,42 @@ class MIPS_Simulator:
         stage = self.pipeline_stage
         output = []
         for i in range(self.cycle):
-            #print(f"cycle {i+1}")
             output.append(f"cycle {i+1}")
             for j in range(self.counter):
-                if (stages[j][i] != "   "):
-                    output.append(f"{stage[j]}: {stages[j][i]}")
-                    if (stage[j] == "lw"):
-                        if (stages[j][i] == "EX "):
-                            output.append(" 01 010 11")
-                        elif (stages[j][i] == "ME "):
-                            output.append(" 010 11")
-                        elif (stages[j][i] == "WB "):
-                            output.append(" 11")
-                    elif (stage[j] == "sw"):
-                        if (stages[j][i] == "EX "):
-                            output.append(" x1 010 1x")
-                        elif (stages[j][i] == "ME "):
-                            output.append(" 001 0x")
-                        elif (stages[j][i] == "WB "):
-                            output.append(" 0x")
-                    elif (stage[j] == "add") or (stage[j] == "sub"):
-                        if (stages[j][i] == "EX "):
-                            output.append(" 10 000 10")
-                        elif (stages[j][i] == "ME "):
-                            output.append(" 000 10")
-                        elif (stages[j][i] == "WB "):
-                            output.append(" 10")
+                if stages[j][i] != "   ":
+                    if stage[j] in ["lw", "sw", "add", "sub", "beq"]:
+                        output_line = f"  {stage[j]}: {stages[j][i]}"
+                        if stages[j][i] == "EX ":
+                            if stage[j] == "lw":
+                                output_line += " 01 010 11"
+                            elif stage[j] == "sw":
+                                output_line += " x1 010 1x"
+                            elif stage[j] in ["add", "sub"]:
+                                output_line += " 10 000 10"
+                            else:
+                                output_line += " x0 100 0x"
+                        elif stages[j][i] == "MEM":
+                            if stage[j] == "lw":
+                                output_line += " 010 11"
+                            elif stage[j] == "sw":
+                                output_line += " 001 0x"
+                            elif stage[j] in ["add", "sub"]:
+                                output_line += " 000 10"
+                            else:
+                                output_line += " 100 0x"
+                        elif stages[j][i] == "WB ":
+                            if stage[j] == "lw":
+                                output_line += " 11"
+                            elif stage[j] == "sw":
+                                output_line += " 0x"
+                            elif stage[j] in ["add", "sub"]:
+                                output_line += " 10"
+                            else:
+                                output_line += " 0x"
+                        output.append(output_line)
                     else:
-                        if (stages[j][i] == "EX "):
-                            output.append(" x0 100 0x")
-                        elif (stages[j][i] == "ME "):
-                            output.append(" 100 0x")
-                        elif (stages[j][i] == "WB "):
-                            output.append(" 0x")
+                        output.append(f"{stage[j]}: {stages[j][i]}")
+
         for line in output:
             print(line)
         # 輸出暫存器和記憶體的最終狀態
@@ -274,6 +279,37 @@ class MIPS_Simulator:
         self.piplined_handler()
 
 if __name__ == "__main__":
-    mips = MIPS_Simulator("./inputs/test4.txt")
-    mips.run()
+    # 確保 output 資料夾存在
+    os.makedirs("output", exist_ok=True)
 
+    # 四組檔案路徑
+    file_paths = ["./inputs/test3.txt", "./inputs/test4.txt", "./inputs/test5.txt", "./inputs/test6.txt"]
+
+    for file_path in file_paths:
+        # 取得輸入檔案名稱
+        input_file_name = os.path.basename(file_path)
+        # 設定對應的輸出檔案路徑
+        output_file = f"./output/{input_file_name}"
+
+        # 初始化 MIPS 模擬器
+        mips = MIPS_Simulator(file_path)
+
+        # 捕捉輸出
+        from io import StringIO
+        import sys
+
+        # 暫時重定向 stdout
+        old_stdout = sys.stdout
+        sys.stdout = buffer = StringIO()
+
+        # 執行模擬器
+        mips.run()
+
+        # 恢復 stdout
+        sys.stdout = old_stdout
+
+        # 將結果寫入對應的輸出檔案
+        with open(output_file, "w") as f:
+            f.write(buffer.getvalue())
+
+        print(f"Output written to {output_file}")

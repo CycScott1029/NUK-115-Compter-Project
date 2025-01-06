@@ -1,0 +1,45 @@
+cycle 1
+  lw: IF 
+cycle 2
+  lw: ID 
+  lw: IF 
+cycle 3
+  lw: EX  01 010 11
+  lw: ID 
+  beq: IF 
+cycle 4
+  lw: MEM 010 11
+  lw: EX  01 010 11
+  beq: ID 
+  sub: IF 
+cycle 5
+  lw: WB  11
+  lw: MEM 010 11
+  beq: ID 
+  sub: IF 
+cycle 6
+  lw: WB  11
+  beq: ID 
+  sub: IF 
+cycle 7
+  beq: EX  x0 100 0x
+  sw: IF 
+cycle 8
+  beq: MEM 100 0x
+  sw: ID 
+cycle 9
+  beq: WB  0x
+  sw: EX  x1 010 1x
+cycle 10
+  sw: MEM 001 0x
+cycle 11
+  sw: WB  0x
+
+
+1   2   3   4   5   6   7   8   9   10  11  12  13  14  15  16  17  18  19  20
+IF  ID  EX  MEM WB                          
+    IF  ID  EX  MEM WB                      
+        IF  ID  ID  ID  EX  MEM WB          
+            IF  IF  IF                      
+                        IF  ID  EX  MEM WB  
+
