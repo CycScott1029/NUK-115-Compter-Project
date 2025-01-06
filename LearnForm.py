@@ -238,25 +238,18 @@ class MIPS_Simulator:
         for line in output:
             print(line)
         # 輸出暫存器和記憶體的最終狀態
-        output = []
-        output.append(f"\n{self.cycle} cycles\n")
+        print(f"\n{self.cycle} cycles\n")
 
         # print register
-        output.append("\n$1  $2  $3  $4  $5  $6  $7  $8  $9  $10 $11 $12 $13 $14 $15 $16 "
+        print("\n$1  $2  $3  $4  $5  $6  $7  $8  $9  $10 $11 $12 $13 $14 $15 $16 "
                     "$17 $18 $19 $20 $21 $22 $23 $24 $25 $26 $27 $28 $29 $30 $31 $32\n")
-        output.append(self.register)
+        print(self.register)
 
         # print memory
-        output.append("\nw1  w2  w3  w4  w5  w6  w7  w8  w9  w10 w11 w12 w13 w14 w15 w16 "
+        print("\nw1  w2  w3  w4  w5  w6  w7  w8  w9  w10 w11 w12 w13 w14 w15 w16 "
                     "w17 w18 w19 w20 w21 w22 w23 w24 w25 w26 w27 w28 w29 w30 w31 w32\n")
-        output.append(self.memory)
+        print(self.memory)
 
-        # 輸出管線階段對應
-        output.append("\n\n  1   2   3   4   5   6   7   8   9   10  11  12  13  14  "
-                    "15  16  17  18  19  20\n")
-
-        # print(stage)
-        # print(stages)
         str = ""
         for i in range(self.counter):
             for j in range(len(stages[i])):
@@ -265,12 +258,6 @@ class MIPS_Simulator:
         print("\n\n1   2   3   4   5   6   7   8   9   10  11  12  13  14  "
                     "15  16  17  18  19  20")
         print(str)
-        # formatted_output = "".join(output)
-        # print(formatted_output)
-
-        # 將結果輸出到檔案
-        # with open("output.txt", "w") as file:
-        #     file.writelines(output)
 
     def run(self):
         """
