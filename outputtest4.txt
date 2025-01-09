@@ -1,0 +1,135 @@
+Load test instruction from test4.txt
+Cycle: 1
+ 
+add IF 
+ 
+--------
+ 
+Cycle: 2
+ 
+add ID 
+add IF 
+ 
+--------
+ 
+Cycle: 3
+ 
+add EX 10 000 10
+add ID 
+sub IF 
+ 
+--------
+ 
+Cycle: 4
+ 
+add MEM  000 10
+add ID 
+sub IF 
+ 
+--------
+ 
+Cycle: 5
+ 
+add WB  10
+add ID 
+sub IF 
+ 
+--------
+ 
+Cycle: 6
+ 
+add EX 10 000 10
+sub ID 
+beq IF 
+ 
+--------
+ 
+Cycle: 7
+ 
+add MEM  000 10
+sub ID 
+beq IF 
+ 
+--------
+ 
+Cycle: 8
+ 
+add WB  10
+sub ID 
+beq IF 
+ 
+--------
+ 
+Cycle: 9
+ 
+sub EX 10 000 10
+beq ID 
+add IF 
+ 
+--------
+ 
+Cycle: 10
+ 
+sub MEM  000 10
+beq ID 
+add IF 
+ 
+--------
+ 
+Cycle: 11
+ 
+sub WB  10
+beq ID 
+add IF 
+ 
+--------
+ 
+Cycle: 12
+ 
+beq EX 00 100 00
+add ID 
+sw IF 
+ 
+--------
+ 
+Cycle: 13
+ 
+beq MEM  100 00
+add EX 10 000 10
+sw ID 
+ 
+--------
+ 
+Cycle: 14
+ 
+beq WB  00
+add MEM  000 10
+sw ID 
+ 
+--------
+ 
+Cycle: 15
+ 
+add WB  10
+sw ID 
+ 
+--------
+ 
+Cycle: 16
+ 
+sw EX 01 001 00
+ 
+--------
+ 
+Cycle: 17
+ 
+sw MEM  001 00
+ 
+--------
+ 
+Cycle: 18
+ 
+sw WB  00
+ 
+--------
+ 

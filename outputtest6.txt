@@ -1,0 +1,71 @@
+Load test instruction from test6.txt
+Cycle: 1
+ 
+lw IF 
+ 
+--------
+ 
+Cycle: 2
+ 
+lw ID 
+beq IF 
+ 
+--------
+ 
+Cycle: 3
+ 
+lw EX 01 010 11
+beq ID 
+sub IF 
+ 
+--------
+ 
+Cycle: 4
+ 
+lw MEM  010 11
+beq ID 
+sub IF 
+ 
+--------
+ 
+Cycle: 5
+ 
+lw WB  11
+beq ID 
+sub IF 
+ 
+--------
+ 
+Cycle: 6
+ 
+beq EX 00 100 00
+sw IF 
+ 
+--------
+ 
+Cycle: 7
+ 
+beq MEM  100 00
+sw ID 
+ 
+--------
+ 
+Cycle: 8
+ 
+beq WB  00
+sw EX 01 001 00
+ 
+--------
+ 
+Cycle: 9
+ 
+sw MEM  001 00
+ 
+--------
+ 
+Cycle: 10
+ 
+sw WB  00
+ 
+--------
+ 

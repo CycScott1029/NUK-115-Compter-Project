@@ -1,0 +1,81 @@
+Load test instruction from test3.txt
+Cycle: 1
+ 
+lw IF 
+ 
+--------
+ 
+Cycle: 2
+ 
+lw ID 
+lw IF 
+ 
+--------
+ 
+Cycle: 3
+ 
+lw EX 01 010 11
+lw ID 
+beq IF 
+ 
+--------
+ 
+Cycle: 4
+ 
+lw MEM  010 11
+lw EX 01 010 11
+beq ID 
+add IF 
+ 
+--------
+ 
+Cycle: 5
+ 
+lw WB  11
+lw MEM  010 11
+beq ID 
+add IF 
+ 
+--------
+ 
+Cycle: 6
+ 
+lw WB  11
+beq ID 
+add IF 
+ 
+--------
+ 
+Cycle: 7
+ 
+beq EX 00 100 00
+sw IF 
+ 
+--------
+ 
+Cycle: 8
+ 
+beq MEM  100 00
+sw ID 
+ 
+--------
+ 
+Cycle: 9
+ 
+beq WB  00
+sw EX 01 001 00
+ 
+--------
+ 
+Cycle: 10
+ 
+sw MEM  001 00
+ 
+--------
+ 
+Cycle: 11
+ 
+sw WB  00
+ 
+--------
+ 

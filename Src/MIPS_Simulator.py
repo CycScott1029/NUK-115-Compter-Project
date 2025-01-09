@@ -1,9 +1,11 @@
-from Load_Instruction import read_instructions, parse_instruction
 from MIPS_instruction import MIPS_Instruction
+from Load_Instruction import read_instructions, parse_instruction
+import os
+import sys
 
 class MIPS_Simulator:
     def __init__(self, file_path):
-        self.instruction_memory = read_instructions(file_path)
+        self.instruction_memory = read_instructions(file_path) # List of instructions
         self.register_file = {}
         self.register_file["$0"] = 0
         for i in range(1, 32):
@@ -27,288 +29,185 @@ class MIPS_Simulator:
             "WB": None
         }
 
-        self.program_counter = 0
-        self.cycles = 0
+        self.predict_branch_result = False # Predict always taken for now
+        self.branch_result = ''
+        self.branch_from = 0
+        self.program_counter = 1
+        self.cycles = 1
+        self.stall = False
         self.end = False
-
+    
     def IF(self):
-        """
-        Instruction Fetch
-        """
-        # If the ID stage is stalling (bubble insertion), don't fetch a new instruction
-        if (self.pipeline_registers["IF/ID"] 
-            and getattr(self.pipeline_registers["IF/ID"]["instruction"], 'stall', False)):
+        # Handle stall
+        if self.stall or self.pipeline_registers['IF/ID'] or self.program_counter > len(self.instruction_memory):
             return
+        
+        # Read instruction from pc (minus 1 because instruction store in a list which index start with 0)
+        _instruction = self.instruction_memory[self.program_counter - 1]
+        parsed_instruction = None
 
-        # Check if we're out of instructions.
-        if self.program_counter >= len(self.instruction_memory):
-            self.instruction_in_stages["IF"] = None
-            return
+        if _instruction:
+            # Parse instruction
+            parsed_instruction = parse_instruction(_instruction) 
+            # Update program counter
+            if parsed_instruction.opcode == 'beq':
+                    self.branch_from = self.program_counter
+                    if self.predict_branch_result:
+                        self.program_counter = parsed_instruction.immediate + self.program_counter + 1
+                    else:
+                        self.program_counter = self.program_counter + 1
+            else:
+                self.program_counter = self.program_counter + 1
 
-        instruction_text = self.instruction_memory[self.program_counter]
-        instruction = parse_instruction(instruction_text)
-
-        # Load the new instruction into IF/ID
-        self.pipeline_registers["IF/ID"] = {
-            "instruction": instruction
-        }
-
-        # Update stage info and increment PC
-        self.instruction_in_stages["IF"] = instruction.raw_instruction
-        self.program_counter += 1
+        self.instruction_in_stages['IF'] = parsed_instruction
+        self.pipeline_registers['IF/ID'] = parsed_instruction
+        
+            
 
     def ID(self):
-        if self.pipeline_registers["IF/ID"] is None:
-            self.instruction_in_stages["ID"] = None
+        # Handle stall
+        if self.stall or self.pipeline_registers['ID/EX']:
             return
+        
+        # Read instruction
+        _instruction = self.pipeline_registers['IF/ID']
+        self.pipeline_registers['IF/ID'] = None
+        self.instruction_in_stages['IF'] = None
 
-        instruction = self.pipeline_registers["IF/ID"]["instruction"]
+        if _instruction:
+            # Generate control signals
+            self.set_control_signals(_instruction)
 
-        # --------------------------------------------------
-        # 1) Detect load-use hazard with the instruction in ID/EX
-        # --------------------------------------------------
-        hazard_detected = False
-        if self.pipeline_registers["ID/EX"]:
-            prev_instr = self.pipeline_registers["ID/EX"]["instruction"]
-            if prev_instr.opcode == "lw" and prev_instr.RegWrite == 1:
-                # lw writes to 'rt' if RegDst=0, else 'rd'
-                lw_dest = prev_instr.rt if (prev_instr.RegDst == 0) else prev_instr.rd
-                # If current instruction in ID needs lw_dest for rs or rt => STALL
-                if lw_dest in [instruction.rs, instruction.rt]:
-                    hazard_detected = True
+            # Read value from registers
+            _instruction.rs_value = self.register_file[_instruction.rs]
+            _instruction.rt_value = self.register_file[_instruction.rt]
 
-        if hazard_detected:
-            # Mark a stall
-            instruction.stall = True  
-            # Insert a bubble into EX (so no new instruction goes there this cycle)
-            self.pipeline_registers["ID/EX"] = None  
-            # Do NOT clear IF/ID => we decode the same instruction next cycle
-            print(f"[Cycle {self.cycles}] ID: Stalling on load-use hazard for {instruction.raw_instruction}")
-            self.instruction_in_stages["ID"] = instruction.raw_instruction
-            return
-
-        # If no hazard -> proceed
-
-        # If the instruction was previously stalled, you can reset or just proceed
-        if instruction.stall:
-            instruction.stall = False  # optional to clear
-            self.instruction_in_stages["ID"] = instruction.raw_instruction
-            return
-
-        # --------------------------------------------------
-        # 2) Normal decode
-        # --------------------------------------------------
-        rs_val = self.register_file.get(instruction.rs, 0)
-        rt_val = self.register_file.get(instruction.rt, 0)
-
-        # Set control signals
-        self.set_control_signals(instruction)
-
-        write_reg = instruction.rd if instruction.RegDst else instruction.rt
-
-        # Move the current instruction + data into ID/EX
-        self.pipeline_registers["ID/EX"] = {
-            "instruction": instruction,
-            "rs_val": rs_val,
-            "rt_val": rt_val,
-            "write_reg": write_reg,
-            "immediate": instruction.immediate
-        }
-
-        # Clear IF/ID
-        self.pipeline_registers["IF/ID"] = None
-        self.instruction_in_stages["ID"] = instruction.raw_instruction
+        self.instruction_in_stages['ID'] = _instruction
+        self.pipeline_registers['ID/EX'] = _instruction
 
     def EX(self):
-        """
-        Execute / ALU stage + Forwarding
-        """
-        if self.pipeline_registers["ID/EX"] is None:
-            self.instruction_in_stages["EX"] = None
+        # Handle stall
+        if self.stall or self.pipeline_registers['EX/MEM']:
             return
+        
+        # Read instruction
+        _instruction = self.pipeline_registers['ID/EX']
+        self.pipeline_registers['ID/EX'] = None
+        self.instruction_in_stages['ID'] = None
 
-        id_ex = self.pipeline_registers["ID/EX"]
-        instruction = id_ex["instruction"]
-
-        # If we are stalling or have a bubble, skip
-        if instruction.stall:
-            self.instruction_in_stages["EX"] = instruction.raw_instruction
-            return
-
-        rs_val = id_ex["rs_val"]
-        rt_val = id_ex["rt_val"]
-        imm = id_ex["immediate"]
-        write_reg = id_ex["write_reg"]  # The register we plan to write in WB stage
-
-        # ---- Forwarding Logic ----
-        # 1) Forward from EX/MEM if needed
-        # 2) If not forwarded from EX/MEM, forward from MEM/WB
-
-        # Forward from EX/MEM
-        ex_mem = self.pipeline_registers["EX/MEM"]
-        if ex_mem and ex_mem["instruction"].RegWrite and not ex_mem["instruction"].stall:
-            # The register that EX/MEM is writing to:
-            ex_mem_dest = ex_mem["write_reg"]
-            # Make sure it is not $0 and is the same as our current rs or rt
-            if ex_mem_dest == instruction.rs and ex_mem_dest != '0':
-                rs_val = ex_mem["alu_result"] if ex_mem["alu_result"] is not None else rs_val
-                instruction.forwarded = True
-            if ex_mem_dest == instruction.rt and ex_mem_dest != '0':
-                rt_val = ex_mem["alu_result"] if ex_mem["alu_result"] is not None else rt_val
-                instruction.forwarded = True
-
-        # Forward from MEM/WB
-        mem_wb = self.pipeline_registers["MEM/WB"]
-        if mem_wb and mem_wb["instruction"].RegWrite and not mem_wb["instruction"].stall:
-            mem_wb_dest = mem_wb["write_reg"]
-            # If MEM/WB had a lw, the data is in mem_data; otherwise it's alu_result
-            # Decide what data to forward
-            data_to_forward = (mem_wb["mem_data"] if mem_wb["mem_data"] is not None
-                               else mem_wb["alu_result"])
-
-            if mem_wb_dest == instruction.rs and mem_wb_dest != '0':
-                rs_val = data_to_forward
-                instruction.forwarded = True
-            if mem_wb_dest == instruction.rt and mem_wb_dest != '0':
-                rt_val = data_to_forward
-                instruction.forwarded = True
-
-        # ---- ALU Operation ----
-        alu_result = None
-        branch_taken = False
-        branch_target = None
-
-        if instruction.opcode in ["add", "sub", "and", "or"]:
-            if instruction.opcode == "add":
-                alu_result = rs_val + rt_val
-            elif instruction.opcode == "sub":
-                alu_result = rs_val - rt_val
-            elif instruction.opcode == "and":
-                alu_result = rs_val & rt_val
-            elif instruction.opcode == "or":
-                alu_result = rs_val | rt_val
-
-        elif instruction.opcode == "lw" or instruction.opcode == "sw":
-            alu_result = rs_val + imm
-
-        elif instruction.opcode == "beq":
-            branch_taken = (rs_val == rt_val)
-            # Typical MIPS branch target = PC + (immediate << 2)
-            # For simplicity, we skip the shift, or do it your way:
-            branch_target = self.program_counter + imm
-
-        if branch_taken:
-            # flush the instructions that entered IF & ID in the last 2 cycles
-            self.pipeline_registers["IF/ID"] = None
-            self.pipeline_registers["ID/EX"] = None
-            self.program_counter = branch_target
-            self.instruction_in_stages["EX"] = instruction.raw_instruction
-            return
-
-        # Save EX results
-        self.pipeline_registers["EX/MEM"] = {
-            "instruction": instruction,
-            "alu_result": alu_result,
-            "branch_taken": branch_taken,
-            "branch_target": branch_target,
-            "rs_val": rs_val,
-            "rt_val": rt_val,
-            "write_reg": write_reg
-        }
-
-        # Clear ID/EX
-        self.pipeline_registers["ID/EX"] = None
-        self.instruction_in_stages["EX"] = instruction.raw_instruction
-
+        if _instruction:
+            # Perform arithmetic calculation
+            if _instruction.opcode == 'add':
+                _instruction.result = _instruction.rs_value + _instruction.rt_value
+            elif _instruction.opcode == 'sub':
+                _instruction.result = _instruction.rs_value - _instruction.rt_value
+            elif _instruction.opcode == 'beq':
+                if _instruction.rs_value == _instruction.rt_value:
+                    self.branch_result = True
+                else:
+                    self.branch_result = False
+            
+            # Validate prediction
+            if _instruction.opcode == 'beq':
+                if self.branch_result != self.predict_branch_result:
+                    # Flush
+                    self.pipeline_registers['ID/EX'] = None
+                    self.pipeline_registers['IF/ID'] = None
+                    if self.branch_result:
+                        self.program_counter = _instruction.immediate + self.branch_from + 1
+                    else:
+                        self.program_counter = self.branch_from + 1
+        
+        self.instruction_in_stages['EX'] = _instruction
+        self.pipeline_registers['EX/MEM'] = _instruction
+        
+        
+    
     def MEM(self):
-        """
-        Memory Access
-        """
-        if self.pipeline_registers["EX/MEM"] is None:
-            self.instruction_in_stages["MEM"] = None
-            return
+        # Read instruction
+        _instruction = self.pipeline_registers['EX/MEM']
+        self.pipeline_registers['EX/MEM'] = None
+        self.instruction_in_stages['EX'] = None
 
-        ex_mem = self.pipeline_registers["EX/MEM"]
-        instruction = ex_mem["instruction"]
-        alu_result = ex_mem["alu_result"]
-        rs_val = ex_mem["rs_val"]
-        rt_val = ex_mem["rt_val"]
-        write_reg = ex_mem["write_reg"]
+        if _instruction:
+            # Perform data movement
+            if _instruction.opcode == 'lw':
+                _instruction.result = self.data_memory[_instruction.rt_value * 4 + _instruction.immediate]
+            elif _instruction.opcode == 'sw':
+                self.data_memory[_instruction.rt_value * 4 + _instruction.immediate] = _instruction.rs_value
 
-        if instruction.stall:
-            self.instruction_in_stages["MEM"] = instruction.raw_instruction
-            return
-
-        mem_data = None
-        if instruction.opcode == "lw":
-            mem_data = self.data_memory.get(alu_result, 0)
-
-        elif instruction.opcode == "sw":
-            # Typically sw $rt, offset($rs)
-            # base = rs, store the contents of rt
-            self.data_memory[alu_result] = rt_val
-
-        # Branches do not need any memory op; R-type does not need it either
-
-        self.pipeline_registers["MEM/WB"] = {
-            "instruction": instruction,
-            "alu_result": alu_result,
-            "mem_data": mem_data,       # only valid if lw
-            "write_reg": write_reg
-        }
-
-        # Clear EX/MEM
-        self.pipeline_registers["EX/MEM"] = None
-        self.instruction_in_stages["MEM"] = instruction.raw_instruction
+        self.instruction_in_stages['MEM'] = _instruction
+        self.pipeline_registers['MEM/WB'] = _instruction
 
     def WB(self):
-        """
-        Write Back
-        """
-        if self.pipeline_registers["MEM/WB"] is None:
-            self.instruction_in_stages["WB"] = None
-            return
+        # Read instruction
+        _instruction = self.pipeline_registers['MEM/WB']
+        self.pipeline_registers['MEM/WB'] = None
+        self.instruction_in_stages['MEM'] = None
 
-        mem_wb = self.pipeline_registers["MEM/WB"]
-        instruction = mem_wb["instruction"]
-        alu_result = mem_wb["alu_result"]
-        mem_data = mem_wb["mem_data"]
-        write_reg = mem_wb["write_reg"]
+        if _instruction:
+            # Write back to registers
+            if _instruction.opcode == 'lw':
+                self.register_file[_instruction.rs] = _instruction.result
+            elif _instruction.opcode in ['add', 'sub']:
+                self.register_file[_instruction.rd] = _instruction.result
 
-        if instruction.stall:
-            self.instruction_in_stages["WB"] = instruction.raw_instruction
-            return
+        self.instruction_in_stages['WB'] = _instruction
+        
+    def display(self):
+        print(f"Cycle: {self.cycles}")
+        print(' ')
+        display_sequence = ['WB', 'MEM', 'EX', 'ID', 'IF']
+        for stage in display_sequence:
+            output = ""
+            signals = ""
+            if self.instruction_in_stages[stage]:
+                output += str(self.instruction_in_stages[stage].opcode) + " " + stage + " "
+                if stage in ['WB', 'MEM', 'EX']:
+                    signals +=  str(self.instruction_in_stages[stage].MemToReg) + str(self.instruction_in_stages[stage].RegWrite) + " "
+                    if stage in ['MEM', 'EX']:
+                        signals += str(self.instruction_in_stages[stage].MemWrite) + str(self.instruction_in_stages[stage].MemRead) + str(self.instruction_in_stages[stage].Branch) + " "
+                        if stage == 'EX':
+                            signals += str(self.instruction_in_stages[stage].ALUSrc) + str(self.instruction_in_stages[stage].RegDst)
+                output += signals[::-1]
+            if output != "":
+                print(output)
+        print(' ')
+        print('--------')
+        print(' ')
 
-        # If instruction writes to a register
-        if instruction.RegWrite and write_reg != '0':
-            if instruction.opcode == "lw":
-                # Write mem_data to register
-                self.register_file[f'${write_reg}'] = mem_data
-            else:
-                # R-type or other instructions => write alu_result
-                self.register_file[f'${write_reg}'] = alu_result
+    def hazard_handler(self):
+        self.stall = False
 
-        # Clear MEM/WB
-        self.pipeline_registers["MEM/WB"] = None
-        self.instruction_in_stages["WB"] = instruction.raw_instruction
+        if self.pipeline_registers['ID/EX']:
+            checks = ['EX/MEM', 'MEM/WB']
+            for pipReg in checks:
+                if self.pipeline_registers[pipReg] and self.pipeline_registers[pipReg].opcode == 'lw':
+                    if self.pipeline_registers['ID/EX'].rs == self.pipeline_registers[pipReg].rt:
+                        if pipReg == 'MEM/WB':
+                            self.pipeline_registers['ID/EX'].rs_value = self.pipeline_registers[pipReg].result
+                            self.stall = True
+                        else:
+                            self.stall = True
+                    elif self.pipeline_registers['ID/EX'].rt == self.pipeline_registers[pipReg].rt:
+                        if pipReg == 'MEM/WB':
+                            self.pipeline_registers['ID/EX'].rt_value = self.pipeline_registers[pipReg].result
+                            self.stall = True
+                        else:
+                            self.stall = True
+                elif self.pipeline_registers[pipReg] and self.pipeline_registers[pipReg].opcode in ['add', 'sub']:
+                    if self.pipeline_registers['ID/EX'].rs == self.pipeline_registers[pipReg].rd:
+                        self.pipeline_registers['ID/EX'].rs_value = self.pipeline_registers[pipReg].result
+                        self.stall = True
+                    elif self.pipeline_registers['ID/EX'].rt == self.pipeline_registers[pipReg].rd:
+                        self.pipeline_registers['ID/EX'].rt_value = self.pipeline_registers[pipReg].result
+                        self.stall = True
+
 
     def set_control_signals(self, instruction: MIPS_Instruction):
-        """
-        Sets the control signals in the instruction object.
-        You can expand this logic for 'and', 'or', 'addi', etc.
-        """
         op = instruction.opcode
 
-        # Reset all signals
-        instruction.RegDst = 0
-        instruction.ALUSrc = 0
-        instruction.MemToReg = 0
-        instruction.RegWrite = 0
-        instruction.MemRead = 0
-        instruction.MemWrite = 0
-        instruction.Branch = 0
-
-        if op in ["add", "sub", "and", "or"]:
+        if op in ["add", "sub"]:
             instruction.RegDst = 1
             instruction.ALUSrc = 0
             instruction.MemToReg = 0
@@ -344,45 +243,31 @@ class MIPS_Simulator:
             instruction.MemWrite = 0
             instruction.Branch = 1
             instruction.ALUOp = "sub"
-        # etc. for other instructions
-
-    def display(self):
-        """
-        Print pipeline stages each cycle.
-        """
-        print(f"\n--- Cycle {self.cycles} ---")
-        # Gather instructions at each stage
-        for stage in ["IF", "ID", "EX", "MEM", "WB"]:
-            if self.instruction_in_stages[stage] is not None:
-                print(f"{self.instruction_in_stages[stage]}: {stage}")
-
-    def pipeline_empty(self):
-        """
-        Check if all pipeline registers are empty (None).
-        """
-        return all(self.pipeline_registers[reg] is None for reg in self.pipeline_registers)
 
     def run(self):
-        """
-        Run one cycle of the pipeline.
-        """
-        self.cycles += 1
-        # Standard pipeline order
+        if self.program_counter > len(self.instruction_memory) and all(stage is None for stage in self.pipeline_registers.values()):
+            self.end = True
+            return True
         self.WB()
         self.MEM()
         self.EX()
         self.ID()
         self.IF()
-
         self.display()
-
-        # End if we've fetched all instructions AND the pipeline is drained
-        if self.program_counter >= len(self.instruction_memory) and self.pipeline_empty():
-            self.end = True
-
-        return self.end
+        self.hazard_handler()
+        self.cycles += 1
+        return False
 
 if __name__ == "__main__":
-    sim = MIPS_Simulator(file_path="./inputs/test3.txt")
-    while not sim.run():
-        pass
+        for filename in os.listdir("./inputs/"):
+            file_path = os.path.join("./inputs/", filename)
+            with open(f'output{filename}', 'w') as file:
+                original_stdout = sys.stdout
+                sys.stdout = file
+                
+                print(f'Load test instruction from {filename}')
+                Sim = MIPS_Simulator(file_path=file_path)
+                while not Sim.run():
+                    pass
+
+                sys.stdout = original_stdout

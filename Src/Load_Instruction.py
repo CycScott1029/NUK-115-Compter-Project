@@ -25,22 +25,14 @@ def parse_instruction(instruction):
 
     if operation in ['add', 'sub']:  # R-type instructions
         rd, rs, rt = operands
-        rd = rd.replace('$', '')
-        rs = rs.replace('$', '')
-        rt = rt.replace('$', '')
     elif operation in ['lw', 'sw']:  # I-type instructions
         rt, offset_base = operands
-        rt = rt.replace('$', '')
         offset, rs = offset_base.split('(')
-        rs = rs.replace(')', '').replace('$', '')
+        rs = rs.replace(')', '')
         immediate = int(offset)
     elif operation in ['beq']:  # Branch instruction
         rs, rt, immediate = operands
-        rs = rs.replace('$', '')
-        rt = rt.replace('$', '')
         immediate = int(immediate)
-    elif operation in ['j']:  # J-type instruction
-        immediate = int(operands[0])
 
     # Create a MIPS_Instruction object
     return MIPS_Instruction({

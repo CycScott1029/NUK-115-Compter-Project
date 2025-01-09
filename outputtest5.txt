@@ -1,0 +1,85 @@
+Load test instruction from test5.txt
+Cycle: 1
+ 
+sub IF 
+ 
+--------
+ 
+Cycle: 2
+ 
+sub ID 
+beq IF 
+ 
+--------
+ 
+Cycle: 3
+ 
+sub EX 10 000 10
+beq ID 
+add IF 
+ 
+--------
+ 
+Cycle: 4
+ 
+sub MEM  000 10
+beq ID 
+add IF 
+ 
+--------
+ 
+Cycle: 5
+ 
+sub WB  10
+beq ID 
+add IF 
+ 
+--------
+ 
+Cycle: 6
+ 
+beq EX 00 100 00
+add ID 
+lw IF 
+ 
+--------
+ 
+Cycle: 7
+ 
+beq MEM  100 00
+add EX 10 000 10
+lw ID 
+add IF 
+ 
+--------
+ 
+Cycle: 8
+ 
+beq WB  00
+add MEM  000 10
+lw EX 01 010 11
+add ID 
+ 
+--------
+ 
+Cycle: 9
+ 
+add WB  10
+lw MEM  010 11
+add EX 10 000 10
+ 
+--------
+ 
+Cycle: 10
+ 
+lw WB  11
+add MEM  000 10
+ 
+--------
+ 
+Cycle: 11
+ 
+add WB  10
+ 
+--------
+ 
